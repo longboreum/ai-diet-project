@@ -29,7 +29,7 @@ if "weekly_scores" not in st.session_state: st.session_state.weekly_scores = []
 if "weekly_calories" not in st.session_state: st.session_state.weekly_calories = []
 
 # =====================================
-# 클래스 이름 및 영양성분 DB
+# 클래스 이름 및 영양성분 DB (기존과 동일)
 # =====================================
 class_names = ["bibimbap", "chicken_wings", "donuts", "dumplings", "fried_rice", "hamburger", "ice_cream", "omelette", "pho", "pizza", "ramen", "spaghetti", "sushi", "tacos", "waffles"]
 food_info = {
@@ -83,4 +83,130 @@ target_fat = weight * 0.8
 target_carb = max((target_calorie - target_protein * 4 - target_fat * 9) / 4, 0)
 
 st.subheader("🎯 오늘 목표")
-st.code(f"칼로리: {round(target_calorie)} kcal | 탄수화물: {
+st.code(f"칼로리: {round(target_calorie)} kcal | 탄수화물: {round(target_carb)}g | 단백질: {round(target_protein)}g | 지방: {round(target_fat)}g")
+
+# =====================================
+# 음식 업로드 및 등록 (콜백 함수 적용)
+# =====================================
+st.header("📸 음식 사진 업로드")
+meal_type = st.selectbox("식사 종류", ["아침", "점심", "저녁", "야식"])
+uploaded_file = st.file_uploader("사진 선택", type=["jpg", "jpeg", "png"])
+
+# 버튼 클릭 시 세션 상태를 변경할 콜백 함수 정의
+def register_meal(info, meal_type):
+    st.session_state.total_kcal += info["kcal"]
+    st.session_state.total_protein += info["protein"]
+    st.session_state.total_carb += info["carb"]
+    st.session_state.total_fat += info["fat"]
+    st.session_state.foods.append((meal_type, info["name"]))
+    if meal_type == "야식":
+        st.session_state.night_count += 1
+    st.success(f"✅ {info['name']}(이)가 {meal_type} 식사로 등록되었습니다!")
+
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
+    st.image(image, caption="업로드된 이미지", use_container_width=True)
+    
+    # 예측 프로세스
+    img = image.resize((224, 224))
+    if img.mode != 'RGB': # RGBA 등 예외 처리
+        img = img.convert('RGB')
+    img_array = np.array(img) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
+    
+    prediction = model.predict(img_array)
+    pred_idx = np.argmax(prediction)
+    food_name = class_names[pred_idx]
+    confidence = prediction[0][pred_idx] * 100
+    info = food_info[food_name]
+    
+    st.metric(label=f"예측 음식: {info['name']}", value=f"{confidence:.2f}% 신뢰도")
+    
+    # 영양 정보 시각화
+    st.markdown(f"**📊 {info['name']} 영양 정보:** {info['kcal']} kcal (탄 {info['carb']}g / 단 {info['protein']}g / 지 {info['fat']}g)")
+    
+    # 콜백 함수를 연결하여 상태 유지 문제 해결
+    st.button("🍽️ 이 식사 등록하기", on_click=register_meal, args=(info, meal_type))
+
+# =====================================
+# 누적 현황 및 추천 음식
+# =====================================
+st.header("📝 오늘 식단 현황")
+st.write(f"**기록된 식사:** {st.session_state.foods}")
+
+remain = target_calorie - st.session_state.total_kcal
+st.write(f"**총 섭취 칼로리:** {st.session_state.total_kcal} / {round(target_calorie)} kcal (남은 칼로리: {round(remain)} kcal)")
+
+# 추천 음식 로직
+protein_ratio = st.session_state.total_protein / max(target_protein, 1)
+carb_ratio = st.session_state.total_carb / max(target_carb, 1)
+fat_ratio = st.session_state.total_fat / max(target_fat, 1)
+
+candidates = []
+if protein_ratio <= carb_ratio and protein_ratio <= fat_ratio:
+    current_lack = "단백질"
+    for food, f_info in food_info.items():
+        candidates.append((f_info["protein"] / max(f_info["kcal"], 1), f_info["name"]))
+elif carb_ratio <= fat_ratio:
+    current_lack = "탄수화물"
+    for food, f_info in food_info.items():
+        candidates.append((f_info["carb"] / max(f_info["kcal"], 1), f_info["name"]))
+else:
+    current_lack = "지방"
+    for food, f_info in food_info.items():
+        candidates.append((f_info["fat"] / max(f_info["kcal"], 1), f_info["name"]))
+
+candidates.sort(reverse=True)
+st.info(f"💡 현재 가장 부족한 영양소는 **{current_lack}**입니다. 추천 음식: {', '.join([c[1] for c in candidates[:3]])}")
+
+# =====================================
+# 하루 평가 및 주간 평가
+# =====================================
+st.header("💯 오늘 평가")
+if st.button("오늘 하루 평가하기"):
+    score = 100
+    cal_diff = abs(target_calorie - st.session_state.total_kcal)
+    if cal_diff > 800: score -= 30
+    elif cal_diff > 500: score -= 20
+    elif cal_diff > 300: score -= 10
+    
+    if st.session_state.total_protein < target_protein * 0.8: score -= 10
+    if st.session_state.total_fat > target_fat * 1.3: score -= 10
+    if st.session_state.total_carb > target_carb * 1.3: score -= 10
+    score = max(score, 0)
+    
+    # 버그 수정: 중복 점수도 날짜별 누적이 되도록 조건문 제거
+    st.session_state.weekly_scores.append(score)
+    st.session_state.weekly_calories.append(st.session_state.total_kcal)
+    
+    st.subheader(f"오늘 나의 식단 점수: {score}점")
+    if score >= 90: st.success("매우 우수한 식단입니다. 대단해요! 👍")
+    elif score >= 70: st.info("양호한 식단입니다. 조금만 더 신경 써보세요! 🙂")
+    else: st.warning("식단 개선이 필요합니다. 영양 균형을 맞춰보세요. ⚠️")
+
+st.header("📅 주간 리포트")
+if len(st.session_state.weekly_scores) > 0:
+    weekly_avg = sum(st.session_state.weekly_scores) / len(st.session_state.weekly_scores)
+    st.write(f"**주간 평균 점수:** {round(weekly_avg, 1)} 점")
+    
+    if weekly_avg >= 90: st.success("🥇 매우 우수한 식습관을 유지 중입니다.")
+    elif weekly_avg >= 70: st.info("🥈 양호한 식습관입니다.")
+    else: st.warning("🥉 식습관 개선이 필요합니다.")
+
+if st.session_state.night_count >= 3:
+    st.sidebar.warning(f"🚨 이번 주 야식 섭취가 {st.session_state.night_count}회입니다! 야식을 줄여주세요.")
+
+# 주간 칼로리 그래프
+if len(st.session_state.weekly_calories) > 0:
+    st.subheader("📈 주간 칼로리 변화 추이")
+    fig, ax = plt.subplots()
+    ax.plot(range(1, len(st.session_state.weekly_calories) + 1), st.session_state.weekly_calories, marker="o", color="orange")
+    ax.set_xlabel("Day")
+    ax.set_ylabel("Calories (kcal)")
+    st.pyplot(fig)
+
+# 초기화 버튼
+if st.button("🔄 데이터 초기화"):
+    st.session_state.clear()
+    st.success("모든 데이터가 초기화되었습니다.")
+    st.rerun()

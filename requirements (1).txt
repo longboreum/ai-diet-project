@@ -1,5 +1,0 @@
-streamlit
-tensorflow==2.18.0
-numpy
-Pillow
-matplotlib

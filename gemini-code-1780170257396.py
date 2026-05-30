@@ -29,7 +29,7 @@ if "weekly_scores" not in st.session_state: st.session_state.weekly_scores = []
 if "weekly_calories" not in st.session_state: st.session_state.weekly_calories = []
 
 # =====================================
-# 클래스 이름 및 영양성분 DB (기존과 동일)
+# 클래스 이름 및 영양성분 DB
 # =====================================
 class_names = ["bibimbap", "chicken_wings", "donuts", "dumplings", "fried_rice", "hamburger", "ice_cream", "omelette", "pho", "pizza", "ramen", "spaghetti", "sushi", "tacos", "waffles"]
 food_info = {
@@ -83,43 +83,4 @@ target_fat = weight * 0.8
 target_carb = max((target_calorie - target_protein * 4 - target_fat * 9) / 4, 0)
 
 st.subheader("🎯 오늘 목표")
-st.code(f"칼로리: {round(target_calorie)} kcal | 탄수화물: {round(target_carb)}g | 단백질: {round(target_protein)}g | 지방: {round(target_fat)}g")
-
-# =====================================
-# 음식 업로드 및 등록 (콜백 함수 적용)
-# =====================================
-st.header("📸 음식 사진 업로드")
-meal_type = st.selectbox("식사 종류", ["아침", "점심", "저녁", "야식"])
-uploaded_file = st.file_uploader("사진 선택", type=["jpg", "jpeg", "png"])
-
-def register_meal(info, meal_type):
-    st.session_state.total_kcal += info["kcal"]
-    st.session_state.total_protein += info["protein"]
-    st.session_state.total_carb += info["carb"]
-    st.session_state.total_fat += info["fat"]
-    st.session_state.foods.append((meal_type, info["name"]))
-    if meal_type == "야식":
-        st.session_state.night_count += 1
-    st.success(f"✅ {info['name']}(이)가 {meal_type} 식사로 등록되었습니다!")
-
-if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    st.image(image, caption="업로드된 이미지", use_container_width=True)
-    
-    img = image.resize((224, 224))
-    if img.mode != 'RGB':
-        img = img.convert('RGB')
-    img_array = np.array(img) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
-    
-    prediction = model.predict(img_array)
-    pred_idx = np.argmax(prediction)
-    food_name = class_names[pred_idx]
-    confidence = prediction[0][pred_idx] * 100
-    info = food_info[food_name]
-    
-    st.metric(label=f"예측 음식: {info['name']}", value=f"{confidence:.2f}% 신뢰도")
-    
-    st.markdown(f"**📊 {info['name']} 영양 정보:** {info['kcal']} kcal (탄 {info['carb']}g / 단 {info['protein']}g / 지 {info['fat']}g)")
-    
-    st.button("🍽️ 이 식사 등록하기",
+st.code(f"칼로리: {round(target_calorie)} kcal | 탄수화물: {

@@ -151,10 +151,10 @@ if info_complete:
 else:
     st.write(f"**총 섭취 칼로리:** {st.session_state.total_kcal} kcal")
 
-# [변경 2] 추천 음식 로직: 아침/점심/저녁 중 하나라도 등록되어야 표시
-main_meals_logged = any(meal in ("아침", "점심", "저녁") for meal, _ in st.session_state.foods)
+# 추천 음식 로직: 식사(야식 포함)가 하나라도 등록되어야 표시
+meals_logged = len(st.session_state.foods) > 0
 
-if main_meals_logged and info_complete:
+if meals_logged and info_complete:
     protein_ratio = st.session_state.total_protein / max(target_protein, 1)
     carb_ratio = st.session_state.total_carb / max(target_carb, 1)
     fat_ratio = st.session_state.total_fat / max(target_fat, 1)
@@ -175,7 +175,7 @@ if main_meals_logged and info_complete:
 
     candidates.sort(reverse=True)
     st.info(f"💡 현재 가장 부족한 영양소는 **{current_lack}**입니다. 추천 음식: {', '.join([c[1] for c in candidates[:3]])}")
-elif main_meals_logged and not info_complete:
+elif meals_logged and not info_complete:
     st.caption("추천을 받으려면 먼저 성별·나이·키·몸무게·목표를 입력해주세요.")
 
 # =====================================
@@ -185,6 +185,8 @@ st.header("💯 오늘 평가")
 if st.button("오늘 하루 평가하기"):
     if not info_complete:
         st.warning("먼저 성별·나이·키·몸무게·목표를 입력해주세요.")
+    elif len(st.session_state.foods) == 0:
+        st.warning("등록된 식사가 없습니다. 먼저 음식을 등록해주세요.")
     else:
         score = 100
         cal_diff = abs(target_calorie - st.session_state.total_kcal)
@@ -197,19 +199,33 @@ if st.button("오늘 하루 평가하기"):
         if st.session_state.total_carb > target_carb * 1.3: score -= 10
         score = max(score, 0)
 
-        # 중복 점수도 날짜별 누적이 되도록 조건문 제거
+        # 오늘 기록을 주간 리포트에 누적 (n일차로 등록)
         st.session_state.weekly_scores.append(score)
         st.session_state.weekly_calories.append(st.session_state.total_kcal)
+        day_num = len(st.session_state.weekly_scores)
 
-        st.subheader(f"오늘 나의 식단 점수: {score}점")
+        st.subheader(f"{day_num}일차 식단 점수: {score}점")
         if score >= 90: st.success("매우 우수한 식단입니다. 대단해요! 👍")
         elif score >= 70: st.info("양호한 식단입니다. 조금만 더 신경 써보세요! 🙂")
         else: st.warning("식단 개선이 필요합니다. 영양 균형을 맞춰보세요. ⚠️")
+
+        # 오늘 식사 리셋 → 다음 날(n+1일차) 등록 준비
+        st.session_state.total_kcal = 0
+        st.session_state.total_protein = 0
+        st.session_state.total_carb = 0
+        st.session_state.total_fat = 0
+        st.session_state.foods = []
+        st.info(f"📌 {day_num}일차 기록이 저장되었습니다. 이제 {day_num + 1}일차를 등록할 수 있어요!")
 
 st.header("📅 주간 리포트")
 if len(st.session_state.weekly_scores) > 0:
     weekly_avg = sum(st.session_state.weekly_scores) / len(st.session_state.weekly_scores)
     st.write(f"**주간 평균 점수:** {round(weekly_avg, 1)} 점")
+
+    # 일자별 기록 (1일차, 2일차 ...)
+    st.markdown("**📋 일자별 기록**")
+    for i, (s, c) in enumerate(zip(st.session_state.weekly_scores, st.session_state.weekly_calories), start=1):
+        st.write(f"- **{i}일차**: {c} kcal / {s}점")
 
     if weekly_avg >= 90: st.success("🥇 매우 우수한 식습관을 유지 중입니다.")
     elif weekly_avg >= 70: st.info("🥈 양호한 식습관입니다.")
